@@ -1,8 +1,11 @@
 package dev.mainardes.cache;
 
+import dev.mainardes.cache.impl.SerializableCreator;
+
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.io.Serializable;
 import java.net.URI;
 import java.nio.file.FileSystems;
 import java.nio.file.Files;
@@ -21,6 +24,7 @@ public final class Cache implements Runnable {
 	
 	private static final Map<String, String> ZIP_OPTIONS = new HashMap<>();
 	
+	private static final DefaultObjectCreator DEFAULT_CREATOR = new DefaultObjectCreator();
 	
 	private final Path location;
 	private ZipFileSystem zip;
@@ -50,14 +54,35 @@ public final class Cache implements Runnable {
 		return location;
 	}
 	
+	public synchronized <T extends Serializable> void store(String key, T object) throws IOException{
+		if (key != null && object!= null) {
+			Path path = getEntryPath(key, DEFAULT_CREATOR);
+			Files.deleteIfExists(path);
+			
+			DEFAULT_CREATOR.object = object;
+			
+			put(path, key, DEFAULT_CREATOR);
+		}
+	}
+	
+	public synchronized <T extends Serializable> T get(String key) throws IOException {
+		try {
+			Serializable object = get(key, DEFAULT_CREATOR);
+			
+			@SuppressWarnings("unchecked")
+			Class<T> type = (Class<T>)object.getClass();
+			
+			return type.cast(object);
+		} catch (ClassCastException e) {
+			return null;
+		}
+	}
+	
 	public <K, T> T get(K key, EntryCreator<K, T> creator) throws IOException{
 		
-		String extension = creator.getExtension(),
-			   filename = UUID.nameUUIDFromBytes(creator.name(key).getBytes()) + "." + extension;
+		Path path = getEntryPath(key, creator);
 		
-		Path path = getInternalPath(filename);
-		
-		if (has(filename)) {
+		if (Files.exists(path)) {
 			
 			FileTime time = Files.getLastModifiedTime(path);
 			
@@ -71,28 +96,51 @@ public final class Cache implements Runnable {
 						
 		}
 		
+		return put(path, key, creator);
+
+	}
+	
+	private static <T, K> T put(Path path, K key, EntryCreator<K, T> creator) throws IOException {
+		
 		OutputStream output = Files.newOutputStream(path);
 		T object = creator.create(key, output);
 		
 		if (object != null) Files.setLastModifiedTime(path, FileTime.from(Instant.now()));
 		
 		return object;
-
+		
 	}
 	
-	private Path getInternalPath(String filename) {
+	private <K> Path getEntryPath(K key, EntryCreator<K, ?> creator) {
+		String filename = UUID.nameUUIDFromBytes(creator.name(key).getBytes()) + "." + creator.getExtension();
 		return zip.getPath("/", filename);
-	}
-	
-	private boolean has(String filename) {
-		Path path = zip.getPath("/", filename);
-		return Files.exists(path);
 	}
 	
 	private boolean isLiving(Path path, final long timestamp, final long maxLifetime) throws IOException {
 		if ((System.currentTimeMillis() - timestamp) < (maxLifetime < 0 ? MAX_LIFETIME : maxLifetime)) return true;
 		Files.delete(path);
 		return false;
+	}
+	
+	private static final class DefaultObjectCreator implements SerializableCreator<String, Serializable> {
+
+		private Serializable object;
+		
+		@Override
+		public String name(String key) {
+			return key;
+		}
+
+		@Override
+		public String getExtension() {
+			return "object";
+		}
+
+		@Override
+		public Serializable create(String key) {
+			return object;
+		}
+		
 	}
 	
 	static {
