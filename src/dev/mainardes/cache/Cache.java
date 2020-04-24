@@ -16,8 +16,13 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.UUID;
 import java.util.WeakHashMap;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 import com.sun.nio.zipfs.ZipFileSystem;
+
+import javafx.application.Platform;
+import javafx.beans.property.Property;
 
 public final class Cache implements Runnable {
 
@@ -26,6 +31,8 @@ public final class Cache implements Runnable {
 	private static final Map<String, String> ZIP_OPTIONS = new HashMap<>();
 	
 	private static final DefaultObjectCreator DEFAULT_CREATOR = new DefaultObjectCreator();
+	
+	private static final ExecutorService POOL = Executors.newFixedThreadPool(4);
 	
 	private final Path location;
 	private ZipFileSystem zip;
@@ -40,21 +47,13 @@ public final class Cache implements Runnable {
 		System.out.println("Creating cache at \"" + this.location + "\"...");
 		
 	}
-	
-	@Override
-	public void run() {
-		
-		System.out.println("Closing cache...");
-		
-		try {
-			zip.close();
-		} catch (IOException e) {
-			e.printStackTrace();
-		}
+
+	public <T, K> void set(K key, EntryCreator<K, T> creator, Property<T> property) {
+		set(key, creator, property, true);
 	}
 	
-	public Path getLocation() {
-		return location;
+	public <T, K> void set(K key, EntryCreator<K, T> creator, Property<T> property, boolean onFxThread) {
+		POOL.submit(new CacheTask<>(key, onFxThread, creator, property));
 	}
 	
 	public synchronized <T extends Serializable> void store(String key, T object) throws IOException{
@@ -111,9 +110,10 @@ public final class Cache implements Runnable {
 	}
 	
 	private <T, K> T put(Path path, K key, EntryCreator<K, T> creator, String filename) throws IOException {
-		
 		OutputStream output = Files.newOutputStream(path);
 		T object = creator.create(key, output);
+		
+		output.close();
 		
 		if (object != null) {
 			Files.setLastModifiedTime(path, FileTime.from(Instant.now()));
@@ -124,18 +124,76 @@ public final class Cache implements Runnable {
 		
 	}
 	
+	@Override
+	public void run() {
+		
+		try {
+			zip.close();
+		} catch (IOException e) {
+			e.printStackTrace();
+		}
+	}
+	
+	public Path getLocation() {
+		return location;
+	}
+	
 	private <K> String getFilename(K key, EntryCreator<K, ?> creator) {
 		return UUID.nameUUIDFromBytes(creator.name(key).getBytes()) + "." + creator.getExtension();
 	}
 	
 	private <K> Path getEntryPath(K key, EntryCreator<K, ?> creator, String filename) {
-		return zip.getPath("/", filename);
+		return zip.getPath(filename);
 	}
 	
 	private boolean isLiving(Path path, final long timestamp, final long maxLifetime) throws IOException {
 		if ((System.currentTimeMillis() - timestamp) < (maxLifetime < 0 ? MAX_LIFETIME : maxLifetime)) return true;
 		Files.delete(path);
 		return false;
+	}
+	
+	private class CacheTask<K, T> implements Runnable {
+		
+		private K key;
+		private boolean onFxThread;
+		private EntryCreator<K, T> creator;	
+		
+		private Property<T> property;
+		
+		private T object;
+		
+		public CacheTask(K key, boolean onFxThread, EntryCreator<K, T> creator, Property<T> property) {
+			this.key = key;
+			this.onFxThread = onFxThread;
+			this.creator = creator;
+			this.property = property;
+		}
+
+		@Override
+		public void run() {
+			
+			if (Platform.isFxApplicationThread()) {
+				property.setValue(object);
+				return;
+			}
+			
+			try {
+				object = get(key, creator);
+				
+				if (onFxThread) {
+					Platform.runLater(this);
+					return;
+				} else {
+					property.setValue(object);
+					object = null;
+				}
+				
+			} catch (IOException e) {
+				e.printStackTrace();
+			}
+			
+		}
+		
 	}
 	
 	private static final class DefaultObjectCreator implements SerializableCreator<String, Serializable> {
