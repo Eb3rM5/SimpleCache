@@ -43,6 +43,7 @@ public final class Cache implements Runnable {
 	public void run() {
 		
 		System.out.println("Closing cache...");
+		
 		try {
 			zip.close();
 		} catch (IOException e) {
@@ -72,7 +73,7 @@ public final class Cache implements Runnable {
 			@SuppressWarnings("unchecked")
 			Class<T> type = (Class<T>)object.getClass();
 			
-			return type.cast(object);
+			return type.isAssignableFrom(object.getClass()) ? type.cast(object) : null;
 		} catch (ClassCastException e) {
 			return null;
 		}
