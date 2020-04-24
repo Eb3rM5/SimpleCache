@@ -70,17 +70,12 @@ public final class Cache implements Runnable {
 	}
 	
 	public synchronized <T extends Serializable> T get(String key) throws IOException, ClassCastException {
-		try {
-			Serializable object = get(key, DEFAULT_CREATOR);
-			
-			@SuppressWarnings("unchecked")
-			Class<T> type = (Class<T>)object.getClass(); //This is NOT typesafe, it'll cast no matter what. The result class may not be the expected one.
-			
-			return type.cast(object);
-		} catch (ClassCastException e) {
-			System.out.println("oi");
-			return null;
-		}
+		Serializable object = get(key, DEFAULT_CREATOR);
+		
+		@SuppressWarnings("unchecked")
+		Class<T> type = (Class<T>)object.getClass(); //This is NOT typesafe, it'll cast no matter what. The result class may not be the expected one.
+		
+		return type.cast(object);
 	}
 	
 	public <K, T> T get(K key, EntryCreator<K, T> creator) throws IOException{
