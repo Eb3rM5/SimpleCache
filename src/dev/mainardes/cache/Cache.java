@@ -15,6 +15,7 @@ import java.time.Instant;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.UUID;
+import java.util.WeakHashMap;
 
 import com.sun.nio.zipfs.ZipFileSystem;
 
@@ -29,9 +30,10 @@ public final class Cache implements Runnable {
 	private final Path location;
 	private ZipFileSystem zip;
 	
+	private final WeakHashMap<String, Object> objects = new WeakHashMap<>();
+	
 	public Cache(Path location) throws IOException {
 		this.location = location.resolve("cache.zip");
-		
 		zip = (ZipFileSystem)FileSystems.newFileSystem(URI.create("jar:" + this.location.toUri()), ZIP_OPTIONS, null);
 		Runtime.getRuntime().addShutdownHook(new Thread(this, "Cache@" + hashCode()));
 		
@@ -57,31 +59,42 @@ public final class Cache implements Runnable {
 	
 	public synchronized <T extends Serializable> void store(String key, T object) throws IOException{
 		if (key != null && object!= null) {
-			Path path = getEntryPath(key, DEFAULT_CREATOR);
+			String filename = getFilename(key, DEFAULT_CREATOR);
+			Path path = getEntryPath(key, DEFAULT_CREATOR, filename);
 			Files.deleteIfExists(path);
 			
 			DEFAULT_CREATOR.object = object;
 			
-			put(path, key, DEFAULT_CREATOR);
+			put(path, key, DEFAULT_CREATOR, filename);
 		}
 	}
 	
-	public synchronized <T extends Serializable> T get(String key) throws IOException {
+	public synchronized <T extends Serializable> T get(String key) throws IOException, ClassCastException {
 		try {
 			Serializable object = get(key, DEFAULT_CREATOR);
 			
 			@SuppressWarnings("unchecked")
-			Class<T> type = (Class<T>)object.getClass();
+			Class<T> type = (Class<T>)object.getClass(); //This is NOT typesafe, it'll cast no matter what. The result class may not be the expected one.
 			
-			return type.isAssignableFrom(object.getClass()) ? type.cast(object) : null;
+			return type.cast(object);
 		} catch (ClassCastException e) {
+			System.out.println("oi");
 			return null;
 		}
 	}
 	
 	public <K, T> T get(K key, EntryCreator<K, T> creator) throws IOException{
+		String filename = getFilename(key, creator);
 		
-		Path path = getEntryPath(key, creator);
+		Object storedObject = objects.get(filename);
+		if (storedObject != null) {
+			Class<T> type = creator.getContentType();
+			if (type.isAssignableFrom(storedObject.getClass())) return type.cast(storedObject);
+		}
+		
+		Path path = getEntryPath(key, creator, filename);
+		
+		T object;
 		
 		if (Files.exists(path)) {
 			
@@ -89,7 +102,7 @@ public final class Cache implements Runnable {
 			
 			if (isLiving(path, time.toMillis(), creator.getLifetime())) {
 				InputStream input = Files.newInputStream(path);
-				T object = creator.get(input);
+				object = creator.get(input);
 				input.close();
 				
 				return object;
@@ -97,23 +110,30 @@ public final class Cache implements Runnable {
 						
 		}
 		
-		return put(path, key, creator);
-
+		object = put(path, key, creator, filename);
+		
+		return object;
 	}
 	
-	private static <T, K> T put(Path path, K key, EntryCreator<K, T> creator) throws IOException {
+	private <T, K> T put(Path path, K key, EntryCreator<K, T> creator, String filename) throws IOException {
 		
 		OutputStream output = Files.newOutputStream(path);
 		T object = creator.create(key, output);
 		
-		if (object != null) Files.setLastModifiedTime(path, FileTime.from(Instant.now()));
+		if (object != null) {
+			Files.setLastModifiedTime(path, FileTime.from(Instant.now()));
+			objects.put(filename, object);
+		} else objects.remove(filename);
 		
 		return object;
 		
 	}
 	
-	private <K> Path getEntryPath(K key, EntryCreator<K, ?> creator) {
-		String filename = UUID.nameUUIDFromBytes(creator.name(key).getBytes()) + "." + creator.getExtension();
+	private <K> String getFilename(K key, EntryCreator<K, ?> creator) {
+		return UUID.nameUUIDFromBytes(creator.name(key).getBytes()) + "." + creator.getExtension();
+	}
+	
+	private <K> Path getEntryPath(K key, EntryCreator<K, ?> creator, String filename) {
 		return zip.getPath("/", filename);
 	}
 	
