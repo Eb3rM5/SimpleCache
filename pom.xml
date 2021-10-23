@@ -1,0 +1,35 @@
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+	<modelVersion>4.0.0</modelVersion>
+	<groupId>dev.mainardes.cache</groupId>
+	<artifactId>simplecache</artifactId>
+	<version>1.0.0</version>
+	<name>SimpleCache</name>
+
+	<properties>
+		<maven.compiler.source>11</maven.compiler.source>
+		<maven.compiler.target>11</maven.compiler.target>
+		<project.build.fileEncoding>UTF-8</project.build.fileEncoding>
+		<project.reporting.fileEncoding>UTF-8</project.reporting.fileEncoding>
+	</properties>
+
+	<dependencies>
+		<dependency>
+			<groupId>org.openjfx</groupId>
+			<artifactId>javafx-base</artifactId>
+			<version>11</version>
+		</dependency>
+		<dependency>
+			<groupId>org.openjfx</groupId>
+			<artifactId>javafx-graphics</artifactId>
+			<version>11</version>
+		</dependency>
+	</dependencies>
+
+	<distributionManagement>
+		<repository>
+			<id>github</id>
+			<name>GitHub Eb3rM5 Apache Maven Packages</name>
+			<url>https://maven.pkg.github.com/Eb3rM5/SimpleCache</url>
+		</repository>
+	</distributionManagement>
+</project>

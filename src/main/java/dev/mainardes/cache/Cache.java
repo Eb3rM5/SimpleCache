@@ -1,12 +1,11 @@
 package dev.mainardes.cache;
 
-import dev.mainardes.cache.impl.SerializableCreator;
-
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.io.Serializable;
 import java.net.URI;
+import java.nio.file.FileSystem;
 import java.nio.file.FileSystems;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -19,8 +18,7 @@ import java.util.WeakHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
-import com.sun.nio.zipfs.ZipFileSystem;
-
+import dev.mainardes.cache.impl.SerializableCreator;
 import javafx.application.Platform;
 import javafx.beans.property.Property;
 
@@ -35,17 +33,15 @@ public final class Cache implements Runnable {
 	private static final ExecutorService POOL = Executors.newFixedThreadPool(4);
 	
 	private final Path location;
-	private ZipFileSystem zip;
+	private FileSystem zip;
 	
 	private final WeakHashMap<String, Object> objects = new WeakHashMap<>();
 	
 	public Cache(Path location) throws IOException {
 		this.location = location.resolve("cache.zip");
-		zip = (ZipFileSystem)FileSystems.newFileSystem(URI.create("jar:" + this.location.toUri()), ZIP_OPTIONS, null);
+		zip = FileSystems.newFileSystem(URI.create("jar:" + this.location.toUri()), ZIP_OPTIONS, null);
 		Runtime.getRuntime().addShutdownHook(new Thread(this, "Cache@" + hashCode()));
-		
 		System.out.println("Creating cache at \"" + this.location + "\"...");
-		
 	}
 
 	public <T, K> void set(K key, EntryCreator<K, T> creator, Property<T> property) {
